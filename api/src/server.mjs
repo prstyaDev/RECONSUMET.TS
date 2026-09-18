@@ -602,11 +602,45 @@ app.get('/watch', { preHandler: apiGuard('watch') }, async (req, reply) => {
   if (subRes.status === 'rejected') app.log.warn({ provider: req.query.provider, err: subRes.reason?.message }, 'sub getSourcesAll failed');
   if (dubRes.status === 'rejected') app.log.warn({ provider: req.query.provider, err: dubRes.reason?.message }, 'dub getSourcesAll failed');
 
-  const sub = subRes.status === 'fulfilled' ? shapeAll(subRes.value) : null;
-  const dub = dubRes.status === 'fulfilled' ? shapeAll(dubRes.value) : null;
+  let sub = subRes.status === 'fulfilled' ? shapeAll(subRes.value) : null;
+  let dub = dubRes.status === 'fulfilled' ? shapeAll(dubRes.value) : null;
+
+  // Auto-fallback: if primary provider yielded no sources and anilistId + ep are provided, try alternate providers
+  const targetEp = Number(req.query.ep || req.query.episodeNumber || req.query.episode);
+  if (!sub && !dub && req.query.anilistId && !isNaN(targetEp) && isNumericId(req.query.anilistId)) {
+    app.log.info({ provider, anilistId: req.query.anilistId, ep: targetEp }, 'Primary provider yielded no playable sources, trying auto-fallback');
+    try {
+      const fallbackEpRes = await agg.getEpisodes(req.query.anilistId);
+      if (fallbackEpRes?.provider && fallbackEpRes?.episodes?.length) {
+        const matchingEp = fallbackEpRes.episodes.find(e => Number(e.number) === targetEp || Number(e.episode) === targetEp) || fallbackEpRes.episodes[targetEp - 1];
+        if (matchingEp?.id && (fallbackEpRes.provider.toLowerCase() !== String(provider).toLowerCase() || matchingEp.id !== episodeId)) {
+          const [fbSubRes, fbDubRes] = await Promise.allSettled([
+            agg.getSourcesAll(fallbackEpRes.provider, matchingEp.id, 'sub'),
+            agg.getSourcesAll(fallbackEpRes.provider, matchingEp.id, 'dub'),
+          ]);
+          const fbSub = fbSubRes.status === 'fulfilled' ? shapeAll(fbSubRes.value) : null;
+          const fbDub = fbDubRes.status === 'fulfilled' ? shapeAll(fbDubRes.value) : null;
+          if (fbSub || fbDub) {
+            return {
+              sub: fbSub,
+              dub: fbDub,
+              fallback: {
+                originalProvider: provider,
+                provider: fallbackEpRes.provider,
+                episodeId: matchingEp.id,
+                episodeNumber: targetEp
+              }
+            };
+          }
+        }
+      }
+    } catch (fbErr) {
+      app.log.warn({ err: fbErr.message }, 'Auto-fallback attempt encountered error');
+    }
+  }
 
   if (!sub && !dub) {
-    return reply.code(502).send({ error: 'no sources found for sub or dub' });
+    return reply.code(502).send({ error: `no sources found for provider '${provider}' on episode '${episodeId}'`, provider, episodeId });
   }
   return { sub, dub };
 });

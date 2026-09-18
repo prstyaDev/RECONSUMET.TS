@@ -122,13 +122,12 @@ class Anilist extends AnimeParser {
           data.data?.Page?.media?.map((item: any) => ({
             id: item.id.toString(),
             malId: item.idMal,
-            title:
-              {
-                romaji: item.title.romaji,
-                english: item.title.english,
-                native: item.title.native,
-                userPreferred: item.title.userPreferred,
-              } || item.title.romaji,
+            title: {
+              romaji: item.title.romaji,
+              english: item.title.english,
+              native: item.title.native,
+              userPreferred: item.title.userPreferred,
+            },
             status:
               item.status == 'RELEASING'
                 ? MediaStatus.ONGOING
@@ -277,13 +276,12 @@ class Anilist extends AnimeParser {
         ...(data.data?.Page?.media?.map((item: any) => ({
           id: item.id.toString(),
           malId: item.idMal,
-          title:
-            {
-              romaji: item.title.romaji,
-              english: item.title.english,
-              native: item.title.native,
-              userPreferred: item.title.userPreferred,
-            } || item.title.romaji,
+          title: {
+            romaji: item.title.romaji,
+            english: item.title.english,
+            native: item.title.native,
+            userPreferred: item.title.userPreferred,
+          },
           status:
             item.status == 'RELEASING'
               ? MediaStatus.ONGOING
@@ -304,7 +302,7 @@ class Anilist extends AnimeParser {
           coverHash: getHashFromImage(item.bannerImage),
           popularity: item.popularity,
           totalEpisodes: item.episodes ?? item.nextAiringEpisode?.episode - 1,
-          currentEpisode: item.nextAiringEpisode?.episode - 1 ?? item.episodes,
+          currentEpisode: (item.nextAiringEpisode?.episode ? item.nextAiringEpisode.episode - 1 : undefined) ?? item.episodes,
           countryOfOrigin: item.countryOfOrigin,
           description: item.description,
           genres: item.genres,
@@ -928,13 +926,12 @@ class Anilist extends AnimeParser {
         results: data.data.Page.media.map((item: any) => ({
           id: item.id.toString(),
           malId: item.idMal,
-          title:
-            {
-              romaji: item.title.romaji,
-              english: item.title.english,
-              native: item.title.native,
-              userPreferred: item.title.userPreferred,
-            } || item.title.romaji,
+          title: {
+            romaji: item.title.romaji,
+            english: item.title.english,
+            native: item.title.native,
+            userPreferred: item.title.userPreferred,
+          },
           image: item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium,
           imageHash: getHashFromImage(
             item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium
@@ -967,7 +964,7 @@ class Anilist extends AnimeParser {
           releaseDate: item.seasonYear,
           color: item.coverImage?.color,
           genres: item.genres,
-          totalEpisodes: isNaN(item.episodes) ? 0 : item.episodes ?? item.nextAiringEpisode?.episode - 1 ?? 0,
+          totalEpisodes: isNaN(item.episodes) ? 0 : (item.episodes ?? (item.nextAiringEpisode?.episode ? item.nextAiringEpisode.episode - 1 : 0)),
           duration: item.duration,
           type: item.format,
         })),
@@ -1001,13 +998,12 @@ class Anilist extends AnimeParser {
         results: data.data.Page.media.map((item: any) => ({
           id: item.id.toString(),
           malId: item.idMal,
-          title:
-            {
-              romaji: item.title.romaji,
-              english: item.title.english,
-              native: item.title.native,
-              userPreferred: item.title.userPreferred,
-            } || item.title.romaji,
+          title: {
+            romaji: item.title.romaji,
+            english: item.title.english,
+            native: item.title.native,
+            userPreferred: item.title.userPreferred,
+          },
           image: item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium,
           imageHash: getHashFromImage(
             item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium
@@ -1040,7 +1036,7 @@ class Anilist extends AnimeParser {
           releaseDate: item.seasonYear,
           color: item.coverImage?.color,
           genres: item.genres,
-          totalEpisodes: isNaN(item.episodes) ? 0 : item.episodes ?? item.nextAiringEpisode?.episode - 1 ?? 0,
+          totalEpisodes: isNaN(item.episodes) ? 0 : (item.episodes ?? (item.nextAiringEpisode?.episode ? item.nextAiringEpisode.episode - 1 : 0)),
           duration: item.duration,
           type: item.format,
         })),
@@ -1098,13 +1094,12 @@ class Anilist extends AnimeParser {
           malId: item.media.idMal,
           episode: item.episode,
           airingAt: item.airingAt,
-          title:
-            {
-              romaji: item.media.title.romaji,
-              english: item.media.title.english,
-              native: item.media.title.native,
-              userPreferred: item.media.title.userPreferred,
-            } || item.media.title.romaji,
+          title: {
+            romaji: item.media.title.romaji,
+            english: item.media.title.english,
+            native: item.media.title.native,
+            userPreferred: item.media.title.userPreferred,
+          },
           country: item.media.countryOfOrigin,
           image:
             item.media.coverImage.extraLarge ?? item.media.coverImage.large ?? item.media.coverImage.medium,
@@ -1164,13 +1159,12 @@ class Anilist extends AnimeParser {
         results: data.data.Page.media.map((item: any) => ({
           id: item.id.toString(),
           malId: item.idMal,
-          title:
-            {
-              romaji: item.title.romaji,
-              english: item.title.english,
-              native: item.title.native,
-              userPreferred: item.title.userPreferred,
-            } || item.title.romaji,
+          title: {
+            romaji: item.title.romaji,
+            english: item.title.english,
+            native: item.title.native,
+            userPreferred: item.title.userPreferred,
+          },
           image: item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium,
           imageHash: getHashFromImage(
             item.coverImage.extraLarge ?? item.coverImage.large ?? item.coverImage.medium
@@ -1191,7 +1185,7 @@ class Anilist extends AnimeParser {
           releaseDate: item.seasonYear,
           color: item.coverImage?.color,
           genres: item.genres,
-          totalEpisodes: isNaN(item.episodes) ? 0 : item.episodes ?? item.nextAiringEpisode?.episode - 1 ?? 0,
+          totalEpisodes: isNaN(item.episodes) ? 0 : (item.episodes ?? (item.nextAiringEpisode?.episode ? item.nextAiringEpisode.episode - 1 : 0)),
           duration: item.duration,
           type: item.format,
         })),
@@ -1899,13 +1893,12 @@ class Anilist extends AnimeParser {
             (item: any): IMangaResult => ({
               id: item.id.toString(),
               malId: item.idMal,
-              title:
-                {
-                  romaji: item.title.romaji,
-                  english: item.title.english,
-                  native: item.title.native,
-                  userPreferred: item.title.userPreferred,
-                } || item.title.romaji,
+              title: {
+                romaji: item.title.romaji,
+                english: item.title.english,
+                native: item.title.native,
+                userPreferred: item.title.userPreferred,
+              },
               status:
                 item.status == 'RELEASING'
                   ? MediaStatus.ONGOING
