@@ -165,38 +165,53 @@ class AnimeAggregator {
   private readonly client: AxiosInstance = axios.create({ timeout: Number(process.env.HTTP_TIMEOUT_MS) || 20000 });
   readonly providers: AnimeParser[];
 
-  /** @param providers anime providers to aggregate (default: KickAssAnime + UniqueStream + ReAnime + Gogoanime + ...) */
+  /** @param providers anime providers to aggregate (default: AniNeko + AnimeNoSub + AnikotoTV + ReAnime + Gogoanime + AnimeUnity) */
   constructor(providers?: AnimeParser[]) {
-    // 1. KickAssAnime first: self-hosted, clean JSON API → krussdomi HLS. Genuinely
-    //    multi-audio (one master carries JP sub + EN dub audio groups). Fast, highly stable.
-    // 2. UniqueStream second: self-hosted Crunchyroll re-host, self-documented FastAPI,
-    //    genuinely multi-server (one server per audio locale — JP sub + every dub). High quality HLS.
-    // 3. ReAnime third: browser-free metadata + high-quality .ass subs; reliable HLS.
-    // 4. Gogoanime fourth: massive back-catalog and reliable fallback.
-    // 5. AniZone: browser-free, direct HLS master on <media-player src>.
-    // 6. Senshi: self-hosted, clean REST API → ninstream HLS.
-    // 7. AnimePahe: large catalogue with kwik HLS embeds.
-    // 8. AniDB: self-hosted multi-language audio.
-    // 9. Mkissa: AllAnime/AllManga GraphQL.
-    // 10. AnimeUnity: multi-source fallback.
-    // Fallbacks / legacy scrapers with degraded hosters:
-    // 11. AnimeNoSub
-    // 12. AniNeko
-    // 13. AnikotoTV (demoted to lowest priority)
+    // AniNeko first: browser-free AND carries soft English subs for simulcasts.
+    // AnimeNoSub second: browser-free, megaplay soft subs on the back-catalog.
+    // AnikotoTV third: browser-free (nekostream backend), HD-1 = megaplay soft subs.
+    // ReAnime fourth: browser-free metadata + high-quality .ass subs; video plays
+    //   through the curl-impersonate proxy (flixcloud CDN is CF/JA3-gated).
+    // Gogoanime/AnimeUnity are fallbacks.
     this.providers = providers ?? [
-      new KickAssAnime(),
-      new UniqueStream(),
+      new AniNeko(),
+      new AnimeNoSub(),
+      new AnikotoTV(),
       new ReAnime(),
       new Gogoanime(),
-      new AniZone(),
-      new Senshi(),
-      new AnimePahe(),
-      new AniDB(),
-      new Mkissa(),
       new AnimeUnity(),
-      new AnimeNoSub(),
-      new AniNeko(),
-      new AnikotoTV(),
+      // AniZone appended last: browser-free, HLS master straight off a <media-player src>
+      // (no extractor); Japanese audio + rich soft subs. CDN is TLS-gated → plays via /proxy.
+      new AniZone(),
+      // AniDB appended last: self-hosted, genuinely multi-server (one server per audio
+      // language). anidb.app metadata is Cloudflare TLS-gated → the provider fetches it via
+      // curl-impersonate (needs CURL_IMPERSONATE_BIN); the hls.anidb.app CDN is un-gated.
+      new AniDB(),
+      // UniqueStream appended last: self-hosted Crunchyroll re-host, self-documented FastAPI,
+      // genuinely multi-server (one server per audio locale — JP sub + every dub). Un-gated API;
+      // signed short-TTL HLS on *.mediacache.cc; .png-disguised MPEG-TS segments.
+      new UniqueStream(),
+      // KickAssAnime appended last: self-hosted, clean JSON API → krussdomi HLS. Genuinely
+      // multi-audio (one master carries JP sub + EN dub audio groups). Un-gated API; segments are
+      // .jpg-disguised MPEG-TS on rotating CDN hosts that gate on Origin (injected by /proxy). Only
+      // VidStreaming/HLS is used (BirdStream is DASH); non-JP/EN dubs are usually DASH-only.
+      new KickAssAnime(),
+      // Senshi appended last: self-hosted, clean REST API → ninstream HLS. Genuinely multi-server
+      // per audio type (HardSub = sub with burned-in EN subs; Dub = English). Un-gated API; segments
+      // are .jpg-disguised MPEG-TS, unencrypted, gating only on Referer: senshi.live (injected by
+      // /proxy). No TLS impersonation needed.
+      new Senshi(),
+      // AnimePahe appended last: large catalogue behind Cloudflare's Managed Challenge — cleared via
+      // the shared Byparr solver (CloudflareSolver: solve once for cf_clearance+UA, cache, reuse on
+      // plain HTTP, auto re-solve on 403). Genuinely multi-server per episode (sub=jpn / dub=eng, each
+      // at 360/720/1080p as separate kwik embeds). kwik → *.uwucdn.top HLS, standard AES-128 over
+      // .jpg-disguised MPEG-TS, gating only on Referer: kwik.cx (injected by /proxy).
+      new AnimePahe(),
+      // Mkissa appended last (provider #13): AllAnime/AllManga skin. Cloudflare-gated api.allanime.day
+      // GraphQL (shared Byparr solver); persisted-query hash + AES-256-GCM `tobeparsed` envelope cracked
+      // from the client. Sub+dub. Sources are third-party embeds (mp4upload/streamwish/…) resolved via
+      // existing extractors; internal `--`/clock links are skipped (their CDN 500s server-side).
+      new Mkissa(),
     ];
   }
 

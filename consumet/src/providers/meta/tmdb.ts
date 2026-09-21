@@ -401,7 +401,7 @@ class TMDB extends MovieParser {
     // if extraData contains a year, filter out the results that don't match the year
     if (extraData && extraData.year && extraData.type === TvType.MOVIE) {
       findMedia.results = findMedia.results.filter(result => {
-        return String(result.releaseDate?.split('-')[0]) === String(extraData.year);
+        return result.releaseDate?.split('-')[0] === extraData.year;
       });
     }
 

@@ -53,6 +53,7 @@ import crypto from 'node:crypto';
 import { assertUrlSafe, followSafeRedirects, SsrfError } from './ssrf-guard.mjs';
 import { isSingle, isNumericId, isRefererUrl, originHeaderValue, isHeaderToken, resolvePublicBaseEnv } from './validators.mjs';
 import mangaRoutes, { createMangaAggregator } from './manga-routes.mjs';
+import { getCachedSubtitle, saveCachedSubtitle, translateVtt } from './subtitle-translator.mjs';
 import pkg from '../../consumet/dist/index.js';
 
 const { AnimeAggregator, MangaAggregator } = pkg;
@@ -463,6 +464,7 @@ app.get('/', { preHandler: rateLimit('root') }, async () => {
       episodes: 'GET /episodes/:anilistId?provider=Gogoanime',
       watch: 'GET /watch?provider=Gogoanime&episodeId=<id>   (returns proxied sources for sub and dub)',
       proxy: 'GET /proxy?url=<encoded>&ref=<encoded referer>&pk=<encoded>   (HLS/segment/subtitle proxy)',
+      subtitlesTranslate: 'GET /subtitles/translate?url=<encoded>&ref=<encoded referer>   (AI auto-translation English -> Indonesian with caching)',
       // Manga surface. All five routes are live against MangaAggregator; /manga/image serves the
       // bytes that /manga/read's pages[].img links point at.
       manga: {
@@ -575,9 +577,27 @@ app.get('/watch', { preHandler: apiGuard('watch') }, async (req, reply) => {
     const ref = src.headers?.Referer;
     const org = src.headers?.Origin;
     const wrap = (u, pk, km, aud) => (u ? wrapUrl(base, u, ref, pk, km, org, aud) : u);
+
+    const subtitles = (src.subtitles ?? []).map(s => ({ ...s, url: wrap(s.url), rawUrl: s.url }));
+
+    // Detect English subtitle and auto-inject an "Indonesian (AI)" track option
+    const engSub = (src.subtitles ?? []).find(s => {
+      const l = (s.lang || '').toLowerCase();
+      return l.includes('english') || l === 'en' || l.startsWith('eng');
+    });
+
+    if (engSub && engSub.url) {
+      const translateUrl = `${base}/subtitles/translate?url=${encodeURIComponent(engSub.url)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`;
+      subtitles.push({
+        lang: 'Indonesian (AI)',
+        url: translateUrl,
+        rawUrl: engSub.url,
+      });
+    }
+
     const out = {
       sources: src.sources.map(s => ({ ...s, url: wrap(s.url, src.pk, src.keyMediaId, src.audioDefault), rawUrl: s.url })),
-      subtitles: (src.subtitles ?? []).map(s => ({ ...s, url: wrap(s.url), rawUrl: s.url })),
+      subtitles,
     };
     if (src.serverName != null) out.serverName = src.serverName;
     if (src.headers != null) out.headers = src.headers;
@@ -602,45 +622,11 @@ app.get('/watch', { preHandler: apiGuard('watch') }, async (req, reply) => {
   if (subRes.status === 'rejected') app.log.warn({ provider: req.query.provider, err: subRes.reason?.message }, 'sub getSourcesAll failed');
   if (dubRes.status === 'rejected') app.log.warn({ provider: req.query.provider, err: dubRes.reason?.message }, 'dub getSourcesAll failed');
 
-  let sub = subRes.status === 'fulfilled' ? shapeAll(subRes.value) : null;
-  let dub = dubRes.status === 'fulfilled' ? shapeAll(dubRes.value) : null;
-
-  // Auto-fallback: if primary provider yielded no sources and anilistId + ep are provided, try alternate providers
-  const targetEp = Number(req.query.ep || req.query.episodeNumber || req.query.episode);
-  if (!sub && !dub && req.query.anilistId && !isNaN(targetEp) && isNumericId(req.query.anilistId)) {
-    app.log.info({ provider, anilistId: req.query.anilistId, ep: targetEp }, 'Primary provider yielded no playable sources, trying auto-fallback');
-    try {
-      const fallbackEpRes = await agg.getEpisodes(req.query.anilistId);
-      if (fallbackEpRes?.provider && fallbackEpRes?.episodes?.length) {
-        const matchingEp = fallbackEpRes.episodes.find(e => Number(e.number) === targetEp || Number(e.episode) === targetEp) || fallbackEpRes.episodes[targetEp - 1];
-        if (matchingEp?.id && (fallbackEpRes.provider.toLowerCase() !== String(provider).toLowerCase() || matchingEp.id !== episodeId)) {
-          const [fbSubRes, fbDubRes] = await Promise.allSettled([
-            agg.getSourcesAll(fallbackEpRes.provider, matchingEp.id, 'sub'),
-            agg.getSourcesAll(fallbackEpRes.provider, matchingEp.id, 'dub'),
-          ]);
-          const fbSub = fbSubRes.status === 'fulfilled' ? shapeAll(fbSubRes.value) : null;
-          const fbDub = fbDubRes.status === 'fulfilled' ? shapeAll(fbDubRes.value) : null;
-          if (fbSub || fbDub) {
-            return {
-              sub: fbSub,
-              dub: fbDub,
-              fallback: {
-                originalProvider: provider,
-                provider: fallbackEpRes.provider,
-                episodeId: matchingEp.id,
-                episodeNumber: targetEp
-              }
-            };
-          }
-        }
-      }
-    } catch (fbErr) {
-      app.log.warn({ err: fbErr.message }, 'Auto-fallback attempt encountered error');
-    }
-  }
+  const sub = subRes.status === 'fulfilled' ? shapeAll(subRes.value) : null;
+  const dub = dubRes.status === 'fulfilled' ? shapeAll(dubRes.value) : null;
 
   if (!sub && !dub) {
-    return reply.code(502).send({ error: `no sources found for provider '${provider}' on episode '${episodeId}'`, provider, episodeId });
+    return reply.code(502).send({ error: 'no sources found for sub or dub' });
   }
   return { sub, dub };
 });
@@ -755,6 +741,68 @@ app.get('/proxy', { preHandler: rateLimit('proxy') }, async (req, reply) => {
     if (v) reply.header(h, v);
   }
   return reply.send(up.nodeStream);
+});
+
+// ---- Auto-translate subtitle via Gemini (English -> Indonesian) ----
+app.get('/subtitles/translate', async (req, reply) => {
+  const target = req.query.url;
+  const rawRef = req.query.ref;
+
+  if (!target) return reply.code(400).send({ error: "missing 'url' query param" });
+  if (![target, rawRef].every(isSingle)) {
+    return reply.code(400).send({ error: "'url' and 'ref' must each be given at most once" });
+  }
+
+  if (rawRef && !isRefererUrl(rawRef)) {
+    return reply.code(400).send({ error: "'ref' must be an http(s) url" });
+  }
+
+  // SSRF guard
+  try {
+    await assertUrlSafe(target);
+  } catch (e) {
+    if (e instanceof SsrfError) return reply.code(400).send({ error: `'url' rejected: ${e.message}` });
+    return reply.code(400).send({ error: "invalid 'url' query param" });
+  }
+
+  reply.header('Access-Control-Allow-Origin', '*');
+
+  // 1. Check disk cache first for instantaneous response
+  const { cached, content, filePath } = await getCachedSubtitle(target);
+  if (cached) {
+    reply.header('content-type', 'text/vtt; charset=utf-8');
+    reply.header('cache-control', 'public, max-age=86400');
+    return reply.send(content);
+  }
+
+  // 2. Fetch original subtitle from upstream
+  let up;
+  try {
+    up = await proxiedUpstream(target, { referer: rawRef || undefined });
+  } catch (e) {
+    return reply.code(502).send({ error: `upstream subtitle fetch failed: ${e.message}` });
+  }
+
+  let rawSubText;
+  try {
+    rawSubText = await up.text();
+  } catch (e) {
+    return reply.code(502).send({ error: `failed to read upstream subtitle: ${e.message}` });
+  } finally {
+    if (up.cleanup) up.cleanup();
+  }
+
+  // 3. Translate subtitle with Gemini (using gemini-2.5-flash)
+  try {
+    const translated = await translateVtt(rawSubText, req.log);
+    await saveCachedSubtitle(filePath, translated);
+    reply.header('content-type', 'text/vtt; charset=utf-8');
+    reply.header('cache-control', 'public, max-age=86400');
+    return reply.send(translated);
+  } catch (e) {
+    req.log.error({ err: e }, 'Subtitle translation failed');
+    return reply.code(500).send({ error: `translation failed: ${e.message}` });
+  }
 });
 
 // ---- manga surface ----
