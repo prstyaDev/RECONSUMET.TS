@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "PORT=3000 PUBLIC_URL=http://localhost:3000 node api/src/server.mjs",
+    "dev": "node --input-type=commonjs -e \"const fs=require('fs'),cp=require('child_process'); if(!fs.existsSync('consumet/dist/index.js')){ if(!fs.existsSync('consumet/node_modules')){cp.execSync('cd consumet && npm install',{stdio:'inherit'})} cp.execSync('npx tsc -p consumet/tsconfig.json || true',{stdio:'inherit'}) }\" && PORT=3000 PUBLIC_URL=http://localhost:3000 node api/src/server.mjs",
     "start": "PORT=3000 PUBLIC_URL=http://localhost:3000 node api/src/server.mjs",
     "build": "cd consumet && npm run build"
   },
@@ -12,5 +12,8 @@
     "@fastify/cors": "^10.0.1",
     "@google/genai": "^2.23.0",
     "fastify": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

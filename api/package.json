@@ -1,6 +1,7 @@
 {
-  "name": "anime-api",
+  "name": "wibufy-api",
   "version": "0.1.0",
+  "author": "prstyaDev",
   "private": true,
   "type": "module",
   "description": "Self-hosted HTTP API over the anime aggregator (AniList search/mapping + HLS proxy).",

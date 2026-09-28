@@ -451,7 +451,8 @@ const proxiedUpstream = async (target, { referer, range, extraHeaders }) => {
 // resolution as every other route (no separate, spoofable IP path); not API-key gated.
 app.get('/', { preHandler: rateLimit('root') }, async () => {
   const base = {
-    name: 'anime-api',
+    name: 'wibufy-api',
+    by: 'prstyaDev',
     status: 'ok',
     providers: agg.providers.map(p => p.name),
     // A DIFFERENT provider set, not a subset: the manga registry shares no provider with the anime
