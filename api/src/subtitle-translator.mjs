@@ -28,10 +28,64 @@ export async function ensureCacheDir() {
 }
 
 /**
+ * Converts Advanced SubStation Alpha (.ass) format to WebVTT cues.
+ */
+function assToVtt(assText) {
+  const lines = assText.split(/\r?\n/);
+  const vttCues = ['WEBVTT\n'];
+  let inEvents = false;
+  let formatFields = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '[Events]') {
+      inEvents = true;
+      continue;
+    }
+    if (inEvents && trimmed.startsWith('Format:')) {
+      formatFields = trimmed.substring(7).split(',').map(s => s.trim().toLowerCase());
+      continue;
+    }
+    if (inEvents && trimmed.startsWith('Dialogue:')) {
+      const parts = trimmed.substring(9).split(',');
+      const textIndex = formatFields.indexOf('text');
+      const startIndex = formatFields.indexOf('start');
+      const endIndex = formatFields.indexOf('end');
+
+      const start = parts[startIndex]?.trim();
+      const end = parts[endIndex]?.trim();
+      const rawText = parts.slice(textIndex !== -1 ? textIndex : 9).join(',');
+
+      // Remove ASS style tags like {\pos(1,2)}, {\i1}, \N
+      const cleanText = rawText.replace(/\{[^}]+\}/g, '').replace(/\\N/g, '\n').replace(/\\n/g, '\n').trim();
+      if (!cleanText) continue;
+
+      const fmtTime = (t) => {
+        if (!t) return '00:00:00.000';
+        const [h, m, s] = t.split(':');
+        const [sec, ms] = (s || '0.0').split('.');
+        const hh = (h || '0').padStart(2, '0');
+        const mm = (m || '0').padStart(2, '0');
+        const ss = (sec || '0').padStart(2, '0');
+        const mss = (ms || '0').padEnd(3, '0').slice(0, 3);
+        return `${hh}:${mm}:${ss}.${mss}`;
+      };
+
+      vttCues.push(`${fmtTime(start)} --> ${fmtTime(end)}\n${cleanText}\n`);
+    }
+  }
+  return vttCues.join('\n');
+}
+
+/**
  * Normalizes subtitle text to ensure valid WebVTT format before translation.
  */
 function normalizeToVtt(text) {
   let content = text.trim();
+  // If it is ASS / SSA format
+  if (content.includes('[Events]') && content.includes('Dialogue:')) {
+    return assToVtt(content);
+  }
   // If it is SRT format (commas instead of periods in timestamp, no WEBVTT header)
   if (!content.startsWith('WEBVTT')) {
     // Replace comma in timestamps: 00:01:20,123 --> 00:01:23,456
@@ -46,7 +100,6 @@ function normalizeToVtt(text) {
  */
 export async function translateVtt(rawSubText, log = console) {
   const ai = getAI();
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const vttInput = normalizeToVtt(rawSubText);
 
   const prompt = `You are a professional anime subtitle translator.
@@ -61,22 +114,53 @@ CRITICAL INSTRUCTIONS:
 WebVTT Input:
 ${vttInput}`;
 
-  log.info?.({ model }, 'Translating subtitle using Gemini...');
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-  });
+  // Candidate models in priority order with graceful fallback if Google servers experience high demand (503)
+  const candidateModels = Array.from(new Set([
+    process.env.GEMINI_MODEL,
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
+  ])).filter(Boolean);
+
+  let lastError = null;
+  let response = null;
+
+  for (const model of candidateModels) {
+    try {
+      log.info?.({ model }, 'Translating subtitle using Gemini...');
+      response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+      });
+      if (response?.text) break;
+    } catch (err) {
+      log.warn?.({ model, err: err.message }, 'Gemini model unavailable or high demand, trying next candidate...');
+      lastError = err;
+    }
+  }
+
+  if (!response?.text) {
+    throw lastError || new Error('All Gemini candidate models failed to respond.');
+  }
 
   let translated = (response.text || '').trim();
 
   // Strip accidental markdown codeblocks if model returned them
-  if (translated.startsWith('```')) {
-    translated = translated.replace(/^```(?:vtt)?\r?\n/, '').replace(/\r?\n```\s*$/, '').trim();
+  if (translated.includes('```')) {
+    translated = translated.replace(/```(?:vtt)?/g, '').replace(/```/g, '').trim();
   }
 
-  // Ensure header remains intact
-  if (!translated.startsWith('WEBVTT')) {
-    translated = `WEBVTT\n\n${translated}`;
+  // Ensure header remains intact and remove any model preamble before WEBVTT
+  const vttIndex = translated.indexOf('WEBVTT');
+  if (vttIndex !== -1) {
+    translated = translated.substring(vttIndex);
+  } else {
+    const arrowIndex = translated.search(/\d{2}:\d{2}/);
+    if (arrowIndex !== -1) {
+      translated = `WEBVTT\n\n${translated.substring(arrowIndex)}`;
+    } else {
+      translated = `WEBVTT\n\n${translated}`;
+    }
   }
 
   return translated;
