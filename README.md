@@ -1,239 +1,301 @@
 <p align="center">
-  <img src="RECONSUM%CE%A3T-TS.png" alt="RECONSUMΣT.TS" width="640">
-</p>
-
-<p align="center">
-  A <b>self-hostable</b> anime aggregator — a TypeScript scraping library plus a small
-  HTTP API with a built-in HLS + subtitle proxy, so streams play in a normal browser.
-</p>
-
-<p align="center">
-  <i>A trimmed, revived fork of <a href="https://github.com/consumet/extensions"><code>@consumet/extensions</code></a>,
-  focused on reliable sources, real English subtitles, and honest documentation of what
-  each source actually requires.</i>
-</p>
-
-<p align="center">
-  <b>Live at <a href="https://api.thesupersuperanime.lol">api.thesupersuperanime.lol</a></b> —
-  public documentation at <a href="https://docs.thesupersuperanime.lol">docs.thesupersuperanime.lol</a>.
+  <h1 align="center">⚡ Wibufy API</h1>
+  <p align="center">
+    <b>High-Performance Anime & Manga Aggregator API</b><br>
+    Built with Fastify, Consumet Extensions, HLS/CORS Stream Proxy, and Real-Time Gemini AI Subtitle Translation.
+  </p>
+  <p align="center">
+    <i>Maintained & Developed by <b>prstyaDev</b></i>
+  </p>
+  <p align="center">
+    <a href="#fitur-utama">Fitur Utama</a> •
+    <a href="#quick-start">Quick Start</a> •
+    <a href="#environment-variables">Environment Variables</a> •
+    <a href="#dokumentasi-endpoint">Dokumentasi API</a> •
+    <a href="#ai-subtitle-translation">AI Subtitles</a> •
+    <a href="#arsitektur--proxy">Arsitektur Proxy</a>
+  </p>
 </p>
 
 ---
 
-## Highlights
+## 🚀 Sekilas Tentang Wibufy API
 
-- **13 aggregated sources**, from plain-HTTP scrapes to genuinely multi-server/multi-audio
-  self-hosted APIs to two Cloudflare-Managed-Challenge-gated sites cleared via a headless
-  browser solver. See [Sources](#sources) below for the honest breakdown of each.
-- **Real English subtitles** across most sources, including *soft* subs for simulcasts
-  (toggleable `.vtt`) and fansub-grade `.ass` tracks.
-- **AniList-based aggregation.** Search/metadata come from the AniList GraphQL API (no
-  scraping); a title is matched across providers, so one AniList id resolves to many sources.
-- **Multi-server responses.** `/watch` returns *every* server a source offers for both sub
-  and dub — not just one — ordered with the default/auto-play server first.
-- **Browser-ready streams.** A `/proxy` injects the right `Referer`/`Origin`, rewrites HLS
-  playlists, adds CORS, and (where needed) does TLS-impersonation, playlist de-obfuscation,
-  or a source-specific key transform, so HLS just plays in `hls.js`/`<video>`.
-- **AI Auto-Translation Subtitles (Indonesian).** Automatically translates English subtitle
-  tracks (`.vtt`, `.srt`, `.ass`) into natural, conversational Indonesian using Google
-  Gemini AI (`@google/genai`). Includes intelligent ASS Aegisub style-stripping, a multi-model
-  fallback pipeline, and SHA-256 persistent disk caching for instantaneous (<15ms) subsequent hits.
+**Wibufy API** (`wibufy-api`) adalah layanan backend mandiri (*self-hosted*) yang menggabungkan berbagai sumber data anime dan manga ke dalam satu REST API terpadu berbasis metadata AniList. 
 
-## Sources
+Dilengkapi dengan:
+1. **Built-in HLS & Subtitle Reverse Proxy**: Menyuntikkan header `Referer`/`Origin`, bypass CORS, re-write manifest playlist `.m3u8`, serta TLS/JA3 impersonation agar video dapat diputar langsung di browser atau aplikasi pemutar video (ExoPlayer, AVPlayer, Video.js, dll).
+2. **AI Subtitle Translation Engine**: Otomatis mendeteksi subtitle bahasa Inggris (`.vtt`, `.srt`, `.ass`), membersihkan tag Aegisub, dan menerjemahkannya ke **Bahasa Indonesia alami** secara instan menggunakan Google Gemini AI dengan sistem cache permanen di disk.
 
-| Provider | Access | Notes |
-|---|---|---|
-| **AniNeko** | plain HTTP | Browser-free. Soft English subs, including simulcasts. |
-| **AnimeNoSub** | plain HTTP | Browser-free. Back-catalog via MegaPlay (7-language soft subs); simulcasts via Nova → Vidmoly fallback. |
-| **AnikotoTV** | plain HTTP | Browser-free (nekostream backend). HD-1 → MegaPlay (soft English subs). |
-| **ReAnime** | TLS-impersonate | Browser-free REST API, high-quality `.ass` English subs. Video (FlixCloud) is TLS/JA3-fingerprint-gated → plays through the proxy. |
-| **Gogoanime** | plain HTTP | Browser-free (no headless browser needed — its AJAX nonce/params are readable straight off the raw page HTML). Legacy fallback catalog. |
-| **AnimeUnity** | fallback only | Italian site, no native English subtitles (an external subtitle layer supplies English captions). Kept as a fallback video source, not a primary. |
-| **AniZone** | TLS-impersonate | Browser-free, server-rendered — the HLS master sits directly in the page HTML. Rich soft subs incl. English `.ass`. CDN is fingerprint-gated → plays via proxy. |
-| **AniDB** | TLS-impersonate | Self-hosted, genuinely multi-server (one server per audio language). Metadata host is fingerprint-gated → impersonated; its video CDN is open. |
-| **UniqueStream** | self-hosted API | Crunchyroll re-host with a clean, self-documented API. Genuinely multi-server: one server per audio locale (JP sub + every dub language CR carries). Signed, short-TTL HLS; its `key.bin` is itself encrypted and needs a bespoke SHA-256-derived AES-128 key before use (see `utils/cf-solver.ts` sibling logic in `server.mjs`). |
-| **KickAssAnime** | self-hosted API | Clean JSON API. One HLS master carries both Japanese (sub) and English (dub) audio groups; segment CDN requires a specific `Origin` header. |
-| **Senshi** | self-hosted API | Clean REST API, no anti-bot at all. Multi-server per audio type. Subtitles are burned-in hardsubs, not a separate track. |
-| **AnimePahe** | Cloudflare + solver | Large catalog behind Cloudflare's Managed Challenge (Turnstile/JS-VM tier — hard-blocks plain HTTP *and* TLS-impersonation alone). Cleared via [Byparr](https://github.com/ThePhaseless/Byparr), a FlareSolverr-compatible headless-browser solver, on a solve-once/cache-and-reuse model. Multi-server per episode (sub/dub × 360/720/1080p). |
-| **Mkissa** | Cloudflare + solver | An AllAnime/AllManga front-end (`mkissa.to`) behind the identical Cloudflare challenge as AnimePahe — shares the same solver infrastructure. |
+---
 
-Every provider's real access requirements are documented above, not assumed — several
-(Gogoanime, AnimePahe, Mkissa) were previously mischaracterized in this repo's own history
-before being re-verified against the live sites. See **[`SOURCES.md`](./SOURCES.md)** for
-the full per-source build history and the candidate-site tracker.
+## ✨ Fitur Utama
 
-### A note on "browser-free"
+- **Multi-Source Aggregation**: Mendukung banyak provider anime (ReAnime, AnimeNoSub, AniNeko, Gogoanime, AnimePahe, Senshi, dll) dan provider manga (MangaDex).
+- **Metadata Terstandarisasi via AniList GraphQL**: Pencarian universal menggunakan ID AniList, mencocokkan judul, sinonim, serta verifikasi jumlah episode/season.
+- **Smart Multi-Server Extraction**: Endpoint `/watch` mengembalikan semua server yang tersedia (baik sub maupun dub) dengan server rekomendasi di urutan pertama.
+- **AI Subtitle Translation (ID)**: 
+  - Model: Google Gemini (`gemini-flash-lite-latest` / `gemini-2.5-flash`).
+  - Pembersihan otomatis format `.ass` / `.srt` ke `.vtt` standar.
+  - Disk Caching berbasis SHA-256: Terjemahan pertama diproses dalam 3–5 detik, pemutaran berikutnya langsung dimuat dalam **< 15 ms**.
+- **Stream Proxy & Anti-Scraping Bypass**:
+  - Dukungan `curl-impersonate` untuk menembus proteksi Cloudflare JA3 fingerprinting.
+  - Terintegrasi dengan Byparr (FlareSolverr headless browser) untuk provider dengan Managed Challenge (AnimePahe & Mkissa).
+- **Proteksi & Keamanan**:
+  - SSRF Guard (`assertUrlSafe`) untuk mencegah eksploitasi URL internal/private network.
+  - Multi-tier in-memory rate limiting per-IP.
 
-Two sources (AnimePahe, Mkissa) genuinely require Byparr, a real headless-browser service,
-to clear Cloudflare's Managed Challenge — this is a real, current dependency, not a legacy
-one. `cloakbrowser` (an older, different browser dependency this project used to have for
-Gogoanime) was fully removed after Gogoanime turned out not to need a browser at all — its
-own AJAX parameters are readable straight from plain HTML. Don't conflate the two: Byparr
-is a live, load-bearing dependency for two sources; cloakbrowser is gone and unrelated.
+---
 
-## Layout
+## 🛠️ Tech Stack
 
-```
-consumet/   the scraping library (providers + extractors). Builds to CommonJS in consumet/dist
-api/        a Fastify service that imports the library and exposes the HTTP API + stream proxy
-```
+- **Runtime & Framework**: Node.js (ESM), Fastify
+- **Scraper Engine**: `@consumet/extensions` (TypeScript, compiled to CommonJS)
+- **AI Engine**: `@google/genai` (Google Gemini AI Studio)
+- **Bypass & Proxy**: Native Fetch, `curl-impersonate` (Chrome 124 TLS mimic), Byparr/FlareSolverr
+- **Subtitles & Media**: WebVTT, ASS/SSA Parser, HLS manifest rewriter
 
-## Quick start
+---
 
+## 📦 Quick Start (Panduan Instalasi)
+
+### 1. Prasyarat
+- Node.js v20+ atau v22+
+- npm / pnpm
+- *Opsional*: `curl-impersonate` untuk provider dengan TLS-fingerprint (seperti FlixCloud/ReAnime).
+
+### 2. Clone & Setup Library Consumet
 ```bash
-# 1) build the library
-cd consumet
-pnpm install
-npx tsc -p tsconfig.json          # emits CommonJS to consumet/dist
-                                  # (~12 pre-existing strict-type warnings are expected)
-# 2) run the API
-cd ../api
-pnpm install
-pnpm start                        # listens on $PORT (default 3000; production runs on 4000)
+git clone https://github.com/prstyo46/wibufy-api.git
+cd wibufy-api
 
-# health check
-curl http://localhost:3000/
+# Compile modul library scraper
+cd consumet
+npm install
+npm run build
+cd ..
 ```
 
-For a full VM deployment (Coolify, curl-impersonate, Byparr), see
-**[`SETUP.md`](./SETUP.md)**.
+### 3. Setup Backend Fastify
+```bash
+cd api
+npm install
 
-### Environment variables
+# Buat file konfigurasi environment
+cp .env.example .env
+```
 
-| Var | Default | Purpose |
+Isi konfigurasi minimal pada `.env`:
+```env
+PORT=3000
+PUBLIC_URL=https://api.wibufy.biz.id
+GEMINI_API_KEY=AIzaSy...your-gemini-api-key
+```
+
+### 4. Menjalankan Server
+```bash
+# Mode development
+npm run dev
+
+# Atau menggunakan PM2 (Production di VPS)
+pm2 start src/server.mjs --name wibufy-api
+```
+
+---
+
+## ⚙️ Environment Variables
+
+| Variabel | Default | Keterangan |
 |---|---|---|
-| `PORT` | `3000` | API listen port |
-| `PUBLIC_URL` | *(unset — see note)* | Absolute public origin (e.g. `https://api.example.com`) used when building `/proxy`, `/watch` and `/manga/image` links. **Required for any non-local deployment** — `SETUP.md` step 5 sets it. Validated at startup: a value that is not an absolute `http(s)` URL, or that carries credentials/query/fragment, makes the process print `anime-api: refusing to start — …` and exit(1) instead of listening. When unset, a link origin is derived from the request **only** if the `Host` header names a loopback interface *and* the connection's raw socket peer is a loopback address (i.e. local development); every other request answers `500` naming this variable. It is never derived from `Host` or `X-Forwarded-Proto` in general — both are client-supplied and were measured forgeable (a forged `Host` used to appear verbatim in `pages[].img` and in every URI of a rewritten HLS playlist, and `X-Forwarded-Proto: gopher` used to become the link scheme). See "THE PUBLIC BASE" in `api/src/validators.mjs`. |
-| `PUBLIC_URL_ALLOWED_ORIGINS` | *(empty)* | Optional comma-list of additional absolute origins this deployment answers on (apex + www, or a tunnel alongside the real domain). A request whose `Host` matches one of them gets that **configured** origin in its links; anything else gets `PUBLIC_URL`. The `Host` only ever selects from this list — it never contributes a byte to the result, so ports, IPv6 brackets, userinfo and path suffixes in the header cannot influence it. Matching is exact on `host[:port]` with the scheme's default port normalised away, so `www.example.com:443` matches a configured `https://www.example.com` but `www.example.com:80` does not. Setting this **without** `PUBLIC_URL` disables the loopback dev fallback: an unmatched `Host` then answers `500` even from localhost. |
-| `CURL_IMPERSONATE_BIN` | *(unset)* | Path to a [curl-impersonate](https://github.com/lexiforest/curl-impersonate) binary; enables fetching CF/JA3-gated CDNs. When empty, TLS impersonation silently no-ops (plain fetch → those hosts 403) — a working binary path in production is required, not just this env var. |
-| `CURL_IMPERSONATE_ARGS` | *(empty)* | Extra args, e.g. `--impersonate chrome124` (single-binary builds) |
-| `TLS_IMPERSONATE_HOSTS` | `flixcloud.cc,overcdn.site,vid-cdn.xyz,xin-cdn.xyz,anidb.app,uwucdn.top` | Comma-list of host suffixes routed through curl-impersonate |
-| `BYPARR_URL` | `http://flaresolverr:8191` | Base URL of the Byparr (FlareSolverr-compatible) solver instance, used by AnimePahe and Mkissa to clear Cloudflare's Managed Challenge. Container is kept under the name `flaresolverr` for drop-in compatibility with FlareSolverr's own API shape. |
-| `GEMINI_API_KEY` | *(unset)* | Google Gemini API key (from Google AI Studio). Required for automated Indonesian subtitle translation (`/subtitles/translate`). |
-| `GEMINI_MODEL` | `gemini-flash-lite-latest` | Primary Gemini model for subtitle translation. Automatically falls back through candidate models (`gemini-3.5-flash-lite`, `gemini-3.8-flash`) if high demand (503) occurs. |
-| `SUBTITLE_CACHE_DIR` | `./cache/subtitles` | Local filesystem directory where translated WebVTT subtitle files are stored permanently. |
-| `RATE_LIMIT_MAX` / `RATE_LIMIT_SCRAPE` / `RATE_LIMIT_WATCH` / `RATE_LIMIT_PROXY` | `120`/`60`/`30`/`600` per minute | Tiered per-IP rate limits (see `server.mjs` header comment for the full table) |
-| `API_KEY` | *(unset)* | If set, gates `/search /info /episodes /watch` behind `x-api-key`/`Bearer`. Off by default. |
-| `DEBUG_INFO` | *(unset)* | If `1`/`true`, `GET /` also exposes TLS-impersonation diagnostics. Off by default. |
+| `PORT` | `3000` | Port listen server Fastify. |
+| `PUBLIC_URL` | *(Wajib di VPS)* | Origin domain publik (misal `https://api.wibufy.biz.id`). Dibutuhkan untuk menyusun link proxy video & subtitle. |
+| `GEMINI_API_KEY` | *(Opsional)* | API Key dari Google AI Studio untuk mengaktifkan fitur translate subtitle Bahasa Indonesia. |
+| `GEMINI_MODEL` | `gemini-flash-lite-latest` | Model Gemini utama. Dilengkapi auto-fallback ke `gemini-3.5-flash-lite` dan `gemini-3.8-flash`. |
+| `SUBTITLE_CACHE_DIR` | `./cache/subtitles` | Lokasi folder penyimpanan cache file WebVTT hasil terjemahan AI. |
+| `CURL_IMPERSONATE_BIN` | *(unset)* | Path ke binary `curl-impersonate` untuk bypass Cloudflare JA3 handshake. |
+| `CURL_IMPERSONATE_ARGS` | *(empty)* | Argumen impersonate tambahan, misal: `--impersonate chrome124`. |
+| `BYPARR_URL` | `http://flaresolverr:8191` | Alamat instance Byparr untuk bypass Cloudflare Turnstile (AnimePahe). |
+| `API_KEY` | *(unset)* | Jika diisi, endpoint data wajib menyertakan header `x-api-key` atau `Authorization: Bearer <key>`. |
+| `RATE_LIMIT_WATCH` | `30` | Batas request per menit untuk endpoint `/watch`. |
+| `RATE_LIMIT_PROXY` | `600` | Batas request per menit untuk segmen video `/proxy`. |
 
 ---
 
-## API reference
+## 📖 Dokumentasi Endpoint API
 
-All responses are JSON unless noted. Full endpoint reference with real, live-captured
-examples: **[docs.thesupersuperanime.lol](https://docs.thesupersuperanime.lol)**. Short
-summary below — examples use Frieren (AniList id `154587`).
+Base URL: `https://api.wibufy.biz.id` (atau `http://localhost:3000` saat lokal).
 
-### `GET /`
-Health + capabilities. Returns `status`, the **live provider list** (in aggregation
-order), and a route summary.
-
-### `GET /search?q=<query>&page=1`
-Search via AniList. Returns AniList metadata, including the `id` used everywhere below.
-
-### `GET /info/:anilistId`
-Which providers have this title (`mappings[]` = available sources), each with a
-title-match `score`.
-
-### `GET /episodes/:anilistId?provider=<name>`
-Episode list for a title. `provider` is an optional preference; the aggregator verifies
-season/episode-count correctness before returning (see `TODO.md` history) rather than
-silently serving a wrong season.
-
-### `GET /watch?provider=<name>&episodeId=<id>`
-Resolve playable sources. Returns `{ sub: [...] | null, dub: [...] | null }` — **each an
-array of every server that provider offers** for that audio type, ordered with the
-default/auto-play server first. `sources[].url` / `subtitles[].url` are pre-wrapped
-through `/proxy` and ready for `hls.js`/`<video>`; `rawUrl` is the original upstream URL.
-
-**`episodeId` is provider-specific, not a universal identifier — always get it from
-`/episodes`, don't guess it.** Each source addresses its own episodes with its own
-internal scheme: AniNeko uses `<slug>/ep-<n>`, ReAnime uses `<anilistId>/<episodeNumber>`,
-AnikotoTV uses a raw numeric ID from its own backend, and so on — there's no shared
-format across providers, because each one's video is ultimately addressed by *that
-site's* own system, not by AniList's episode numbering. `/search` and `/info` DO
-normalize around a single universal identifier (the AniList id) because that's a
-show-level concept every provider can be matched against by title — but at the episode
-level, that universality breaks down, since AniList doesn't know or care how any given
-provider numbers its own episodes internally.
-
-This is a deliberate tradeoff, not an oversight: `/watch` could look up the right
-episodeId itself given just an AniList id + episode number (calling `/episodes`
-internally on every request), but that would mean paying the cost of a fresh
-episode-list fetch on every single `/watch` call — even for a caller who already knows
-exactly which episode they want and has already done that lookup once. The current
-design optimizes for "do the discovery once via `/episodes`, then make fast, direct
-`/watch` calls after that" over "every call is maximally convenient but repeats work."
-A smart client (like this project's own front-end) does the `/info` → `/episodes` →
-`/watch` chain once per title and reuses the result, rather than re-resolving on every
-request.
-
-### `GET /proxy?url=<encoded>&ref=<encoded>&...`
-The streaming proxy (you normally don't call this directly — `/watch` builds the links).
-Injects `Referer`/`Origin`, rewrites HLS playlists so children also route through the
-proxy, adds CORS, and — depending on the source — does TLS-impersonation, playlist
-XOR de-obfuscation, a custom key derivation (UniqueStream), or an audio-track default
-rewrite (KickAssAnime).
-
-### `GET /subtitles/translate?url=<encoded>&ref=<encoded>`
-AI-powered subtitle translation endpoint (English ➔ Indonesian). When a provider returns soft
-subtitles, `/watch` automatically injects a track labeled `"Indonesian (AI)"` pointing to this route.
-
-- **Dynamic Format Normalization**: Automatically converts complex `.ass` (Aegisub) subtitles to
-  clean WebVTT cues, stripping out styling tags (`{\pos}`, `\N`, font colors) to reduce token payload
-  by ~40% while preserving exact millisecond timestamps. SRT timestamps (`00:00:00,000`) are also
-  normalized.
-- **Persistent Disk Caching**: Checks `/cache/subtitles/<SHA256(URL)>.vtt` first. If a translation
-  exists on disk, it is returned immediately with `Content-Type: text/vtt; charset=utf-8` in **< 15ms**
-  without touching the Gemini API.
-- **Multi-Model Auto-Fallback**: Translates using the `@google/genai` SDK with an automatic fallback
-  chain (`gemini-flash-lite-latest` ➔ `gemini-3.5-flash-lite` ➔ `gemini-3.8-flash`) to ensure zero
-  disruption during Google server demand spikes (503).
-- **Security & Headers**: Validated against SSRF attacks (`assertUrlSafe`) and passes necessary upstream
-  `Referer` headers to clear hotlink protections.
+### 1. Health & Server Info
+- **Route**: `GET /`
+- **Contoh Response**:
+```json
+{
+  "name": "wibufy-api",
+  "by": "prstyaDev",
+  "status": "ok",
+  "providers": ["ReAnime", "AnimeNoSub", "AniNeko", "Gogoanime", "AnimePahe"],
+  "mangaProviders": ["MangaDex"],
+  "routes": {
+    "search": "/search?q=<title>",
+    "info": "/info/:anilistId",
+    "episodes": "/episodes/:anilistId?provider=<name>",
+    "watch": "/watch?provider=<name>&episodeId=<id>",
+    "subtitles": "/subtitles/translate?url=<vtt-url>",
+    "mangaSearch": "/manga/search?q=<title>"
+  }
+}
+```
 
 ---
 
-## How it works
+### 2. Cari Anime (AniList)
+- **Route**: `GET /search?q=:query&page=1`
+- **Deskripsi**: Mencari judul anime langsung dari database AniList GraphQL.
+- **Contoh Response**:
+```json
+{
+  "currentPage": 1,
+  "hasNextPage": true,
+  "results": [
+    {
+      "id": "21",
+      "title": {
+        "romaji": "ONE PIECE",
+        "english": "ONE PIECE"
+      },
+      "coverImage": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/...",
+      "status": "RELEASING",
+      "episodes": 1180
+    }
+  ]
+}
+```
 
-- **Search & metadata:** AniList GraphQL (no scraping). Titles (incl. synonyms) are matched
-  across providers by string similarity plus season/episode-count verification, so one
-  AniList id maps to the *correct* season on each source, not just a title-similar one.
-- **Sources are mostly HLS (`.m3u8`).** Every source has its own real access pattern —
-  plain HTTP, `Referer`/`Origin`-locked, TLS/JA3 fingerprint-gated, playlist-obfuscated,
-  or (AnimePahe/Mkissa) behind a full Cloudflare Managed Challenge needing a real headless
-  browser. The `/proxy` and the Byparr-based solver (`utils/cf-solver.ts`) handle all of
-  these; the specific decode/crack logic for individual hosts lives in the library's
-  extractors (`consumet/src/extractors/`).
-- **AI Subtitle Pipeline:** Subtitle tracks fetched from upstream are passed through an internal
-  sanitizer and sent to Google Gemini with strict prompt constraints guarding timestamp integrity
-  and enforcing natural, expressive Indonesian anime dialogue. Completed translations are cached
-  locally as WebVTT, turning a 10-second initial AI inference into a zero-latency asset for all
-  future viewers.
+---
 
-## Contributing
+### 3. Detail & Mapping Provider
+- **Route**: `GET /info/:anilistId`
+- **Deskripsi**: Mengambil metadata lengkap serta daftar provider yang menyediakan anime tersebut.
 
-New sources, fixes, and docs are welcome — see **[`CONTRIBUTING.md`](./CONTRIBUTING.md)**.
-Document a source's *real* access requirements from live verification, not assumption —
-this repo has been burned before by carrying forward stale "needs a browser"/"is
-CF-gated" claims across sessions without re-checking them against the live site.
+---
 
-## Self-host & legal
+### 4. Daftar Episode
+- **Route**: `GET /episodes/:anilistId?provider=:provider`
+- **Contoh Request**: `/episodes/21?provider=ReAnime`
+- **Response**:
+```json
+[
+  {
+    "id": "21/1",
+    "number": 1,
+    "title": "I'm Luffy! The Man Who Will Become the Pirate King!",
+    "isFiller": false
+  },
+  {
+    "id": "21/2",
+    "number": 2,
+    "title": "Enter the Great Swordsman! Pirate Hunter Roronoa Zoro!",
+    "isFiller": false
+  }
+]
+```
+> **Catatan**: Format `episodeId` berbeda di tiap provider. Gunakan ID yang dikembalikan dari endpoint ini saat memanggil endpoint `/watch`.
 
-- This is a personal project. A live instance exists at `api.thesupersuperanime.lol` for
-  the maintainer's own front-end, with public documentation, but with no uptime or
-  stability guarantee — see the docs site's disclaimer.
-- This project **does not host, store, or distribute** any media. It indexes and links to
-  streams publicly available on third-party sites, and is **not affiliated** with any of them.
-- Intended for **personal and educational** use. You are responsible for complying with the
-  laws and terms applicable in your jurisdiction.
+---
 
-## License
+### 5. Streaming Video & Subtitle (`/watch`)
+- **Route**: `GET /watch?provider=:provider&episodeId=:episodeId`
+- **Contoh Request**: `/watch?provider=ReAnime&episodeId=21%2F1180`
+- **Response**:
+```json
+{
+  "sub": [
+    {
+      "sources": [
+        {
+          "quality": "auto",
+          "url": "https://api.wibufy.biz.id/proxy?url=https%3A%2F%2Fvault-95.rundowncdn.top%2F...master.m3u8&ref=https%3A%2F%2Fflixcloud.cc%2F"
+        }
+      ],
+      "subtitles": [
+        {
+          "lang": "English",
+          "url": "https://api.wibufy.biz.id/proxy?url=https%3A%2F%2Fvault-95.rundowncdn.top%2F...eng_2.ass&ref=https%3A%2F%2Fflixcloud.cc%2F",
+          "rawUrl": "https://vault-95.rundowncdn.top/...eng_2.ass"
+        },
+        {
+          "lang": "Indonesian (AI)",
+          "url": "https://api.wibufy.biz.id/subtitles/translate?url=https%3A%2F%2Fvault-95.rundowncdn.top%2F...eng_2.ass&ref=https%3A%2F%2Fflixcloud.cc%2F",
+          "rawUrl": "https://vault-95.rundowncdn.top/...eng_2.ass"
+        }
+      ],
+      "headers": {
+        "Referer": "https://flixcloud.cc/"
+      }
+    }
+  ],
+  "dub": []
+}
+```
 
-[GPL-3.0](./LICENSE) — inherited from `@consumet/extensions` (copyleft: public forks/derivatives
-must also be GPL-3.0 and keep the upstream copyright). See [`consumet/LICENSE`](./consumet/LICENSE).
+---
 
-## Credits
+### 6. AI Subtitle Translation (`/subtitles/translate`)
+- **Route**: `GET /subtitles/translate?url=:subtitleUrl&ref=:referer`
+- **Deskripsi**: Mengambil subtitle sumber (`.vtt`, `.srt`, atau `.ass`), melakukan normalisasi format ke WebVTT standar, menerjemahkannya ke Bahasa Indonesia menggunakan Google Gemini, dan menyimpannya ke disk cache.
+- **Output**: File teks murni berformat `text/vtt; charset=utf-8` yang langsung siap digunakan oleh HTML5 `<track>` atau mobile player (ExoPlayer).
 
-Built on [`@consumet/extensions`](https://github.com/consumet/extensions). Cloudflare
-Managed Challenge bypass via [Byparr](https://github.com/ThePhaseless/Byparr).
+```vtt
+WEBVTT
+
+1
+00:00:15.200 --> 00:00:17.500
+Aku adalah Luffy! Orang yang akan menjadi Raja Bajak Laut!
+
+2
+00:00:18.100 --> 00:00:20.900
+Jika menyerah sekarang, impian kita akan berakhir di sini!
+```
+
+---
+
+### 7. Manga Endpoints
+- `GET /manga/search?q=:title` - Cari manga via MangaDex
+- `GET /manga/info/:mangaId` - Detail manga & list chapter
+- `GET /manga/read/:chapterId` - List gambar halaman chapter
+- `GET /manga/image?url=:imageUrl` - Proxy gambar manga dengan caching & CORS
+
+---
+
+## 🧠 Cara Kerja AI Subtitle Engine
+
+```
+[Sumber Video Provider]
+        │
+  (File Subtitle: .ass / .vtt / .srt)
+        ▼
+[/subtitles/translate] 
+        │
+        ├──> Cek Cache Disk (`./cache/subtitles/<SHA256>.vtt`)
+        │       ├── [HIT]  --> Langsung kirim respons (< 15ms) ⚡
+        │       └── [MISS] ──┐
+        │                    ▼
+        │             Normalisasi Subtitle:
+        │             - Strip style Aegisub `{\pos...}`, font, warna
+        │             - Validasi struktur WebVTT & timestamp
+        │                    │
+        │                    ▼
+        │             Google Gemini API:
+        │             - Menggunakan Prompt Anime Dialog Localization
+        │             - Terjemahan kontekstual, luwes, dan natural
+        │                    │
+        │                    ▼
+        │             Simpan ke Cache Disk & Kirim ke Client
+```
+
+---
+
+## 🔒 Keamanan & Lisensi
+
+- **Edukasi & Riset**: Project ini dibuat untuk tujuan edukasi dan pengembangan API aggregator. Server **tidak menyimpan, menghosting, atau mendistribusikan** file media video apa pun di server sendiri.
+- **Lisensi**: GNU General Public License v3.0 ([GPL-3.0](./LICENSE)).
